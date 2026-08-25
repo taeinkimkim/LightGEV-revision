@@ -1,0 +1,13 @@
+torch==2.8.0+cu129
+torchvision==0.23.0+cu129
+timm==0.4.12
+numpy==2.1.2
+scipy==1.16.2
+pandas==2.3.3
+matplotlib==3.10.6
+opencv-python==4.12.0.88
+pillow==11.0.0
+PyYAML==6.0.3
+easydict==1.13
+ptflops==0.7.5
+tqdm==4.67.1
