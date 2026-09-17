@@ -219,12 +219,6 @@ class LightGEV(nn.Module):
         # ------------------------------
         # LightStereo base (그대로 재사용)
         # ------------------------------
-        base_blocks = cfgs.AGGREGATION_BLOCKS
-        if isinstance(base_blocks, (list, tuple)):
-            agg_blocks = [b + 2 for b in base_blocks]
-        else:
-            agg_blocks = base_blocks + 2
-
         self.backbone = Backbone(cfgs.get("BACKBONE", "MobileNetv2"))
 
         # LightStereo에서 correlation volume 채널 수 (기존 코드에서 48 사용)
@@ -233,7 +227,7 @@ class LightGEV(nn.Module):
         self.cost_agg = Aggregation(
             in_channels=corr_channels,
             left_att=self.left_att,
-            blocks=agg_blocks,
+            blocks=cfgs.AGGREGATION_BLOCKS,
             expanse_ratio=cfgs.EXPANSE_RATIO,
             backbone_channels=self.backbone.output_channels,
         )

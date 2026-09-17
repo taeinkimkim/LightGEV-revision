@@ -25,8 +25,8 @@ def write_list(npz_dir, split, save_path):
 if __name__ == "__main__":
     npz_root = "./FlyingThings3D_npz"
 
-    write_list(npz_root, "train", "./sceneflow_finalpass_train_npz.txt")
-    write_list(npz_root, "val",   "./sceneflow_finalpass_val_npz.txt")
-    write_list(npz_root, "test",  "./sceneflow_finalpass_test_npz.txt")
+    write_list(npz_root, "train", "./sceneflow_train_npz.txt")
+    write_list(npz_root, "val",   "./sceneflow_val_npz.txt")
+    write_list(npz_root, "test",  "./sceneflow_test_npz.txt")
 
     print("\n🎉 All txt files created successfully!")

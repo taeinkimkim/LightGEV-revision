@@ -17,6 +17,10 @@ __all__ = {
     'LightStereo': LightStereoTrainer,
     'BANet': BANetTrainer,
     'LightGEV': LightGEVTrainer,
+    'LightGEVModify': LightGEVTrainer,
+    'LightGEVModify_2': LightGEVTrainer,
+    'LightGEVModify_3': LightGEVTrainer,
+    'LightGEVModify_4': LightGEVTrainer,
 }
 
 

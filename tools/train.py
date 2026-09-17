@@ -27,7 +27,12 @@ def parse_config():
     # mode
     parser.add_argument('--dist_mode', action='store_true', default=False, help='torchrun ddp multi gpu')
     parser.add_argument('--cfg_file', type=str, default=None, required=True, help='specify the config for training')
-    parser.add_argument('--fix_random_seed', action='store_true', default=False, help='')
+    parser.add_argument('--fix_random_seed', action='store_true', default=False,
+                        help='--seed 값으로 random/numpy/torch 시드를 고정한다')
+    parser.add_argument('--seed', type=int, default=0,
+                        help='난수 시드 (--fix_random_seed 와 함께 사용). '
+                             'cross-domain 성능은 run 마다 크게 흔들리므로(측정: KITTI EPE '
+                             '동일 구조 두 run 이 1.2 차이) 여러 seed 로 돌려 평균±범위로 보고할 것.')
 
     # save path
     parser.add_argument('--save_root_dir', type=str, default='./train_outputs', help='save root dir for this experiment')
@@ -77,8 +82,10 @@ def main():
     # env
     torch.cuda.set_device(local_rank)
     if args.fix_random_seed:
-        seed = 0 if not args.dist_mode else dist.get_rank()
+        # dist 모드에서는 rank 마다 다른 시드를 줘야 augmentation 이 겹치지 않는다
+        seed = args.seed if not args.dist_mode else args.seed + dist.get_rank()
         common_utils.set_random_seed(seed=seed)
+        args.resolved_seed = seed
 
     # savedir
     args.output_dir = str(os.path.join(args.save_root_dir, args.exp_group_path, args.tag, args.extra_tag))
@@ -114,8 +121,13 @@ def main():
     for current_epoch in tbar:
         model_trainer.train(current_epoch, tbar)
         model_trainer.save_ckpt(current_epoch)
-        if current_epoch % cfgs.TRAINER.EVAL_INTERVAL == 0:
+        # 마지막 에폭은 EVAL_INTERVAL과 상관없이 항상 평가 (save_ckpt와 동일한 규칙)
+        if (current_epoch % cfgs.TRAINER.EVAL_INTERVAL == 0
+                or current_epoch == model_trainer.total_epochs - 1):
             model_trainer.evaluate(current_epoch)
+
+    # 학습 종료 후 최종 geo_gate_alpha 기록 (LightGEV 계열 모델만 해당)
+    model_trainer.log_geo_gate_alpha('final')
 
 
 if __name__ == '__main__':

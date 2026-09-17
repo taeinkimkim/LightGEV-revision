@@ -10,9 +10,12 @@ class SceneFlowDataset(DatasetTemplate):
     def __init__(self, data_info, data_cfg, mode):
         super().__init__(data_info, data_cfg, mode)
 
+        # 기존 옵션 유지
         self.retrun_pos = getattr(self.data_info, 'RETURN_POS', False)
         self.retrun_super_pixel = getattr(self.data_info, 'RETURN_SUPER_PIXEL', False)
         self.return_right_disp = self.data_info.RETURN_RIGHT_DISP
+
+        self.cleanpass = self.data_info.CLEANPASS  # cleanpass or finalpass
 
     def __getitem__(self, idx):
         
@@ -23,11 +26,15 @@ class SceneFlowDataset(DatasetTemplate):
         # ----- NPZ 로딩 -----
         data = np.load(npz_path)
 
-        left_img = data['left']     # [H, W, 3] float32
-        right_img = data['right']   # [H, W, 3] float32
+        if self.cleanpass:
+            left_img = data['left_clean']     # [H, W, 3] float32
+            right_img = data['right_clean']   # [H, W, 3] float32
+        else:
+            left_img = data['left_final']     # [H, W, 3] float32
+            right_img = data['right_final']   # [H, W, 3] float32
         disp_img = data['disp']     # [H, W] float32
 
-        # (기존 PNG + PFM 로딩 단계 삭제)
+        # (기존 PNG + PFM 로딩 단계 삭제됨)
         # from PIL import Image
         # from pathlib import Path
         # from stereo.datasets.dataset_utils.readpfm import readpfm
@@ -41,7 +48,9 @@ class SceneFlowDataset(DatasetTemplate):
         # right_img = np.array(right_img, dtype=np.float32)
         # disp_img = readpfm(disp_img_path)[0].astype(np.float32)
 
+        # ----- SuperPixel 처리 -----
         if self.retrun_super_pixel:
+            # 기존 코드 유지 (left_img 이용)
             super_pixel_label = Path(self.root).parent.joinpath(
                 'SuperPixelLabel/SceneFlow', npz_rel_path
             )
@@ -50,6 +59,7 @@ class SceneFlowDataset(DatasetTemplate):
             if not os.path.exists(os.path.dirname(super_pixel_label)):
                 os.makedirs(os.path.dirname(super_pixel_label), exist_ok=True)
 
+            # Superpixel 파일 없으면 생성
             if not os.path.exists(super_pixel_label):
                 import cv2
                 from cv2 import ximgproc
@@ -64,6 +74,7 @@ class SceneFlowDataset(DatasetTemplate):
                 super_pixel_label, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH
             ).astype(np.int32)
 
+        # ----- Right disparity(optional) -----
         if self.return_right_disp:
             # 기존: PFM 파일 읽기
             # 수정: 우리는 npz에 disp_right 넣지 않았으므로,
@@ -73,6 +84,7 @@ class SceneFlowDataset(DatasetTemplate):
                 "RETURN_RIGHT_DISP=True이면 npz에 disp_right 만들어 저장해야 합니다."
             )
 
+        # ----- sample 패킹 -----
         sample = {
             'left': left_img,
             'right': right_img,

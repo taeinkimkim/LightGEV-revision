@@ -2,11 +2,12 @@ DATA_CONFIG:
     DATA_INFOS:
         -   DATASET: SceneFlowDataset
             DATA_SPLIT: {
-                TRAINING: ./data/SceneFlow/sceneflow_finalpass_train_npz.txt,
-                EVALUATING: ./data/SceneFlow/sceneflow_finalpass_val_npz.txt,
-                TESTING: ./data/SceneFlow/sceneflow_finalpass_test_small_npz.txt
+                TRAINING: ./data/SceneFlow/sceneflow_train_npz.txt,
+                EVALUATING: ./data/SceneFlow/sceneflow_val_npz.txt,
+                TESTING: ./data/SceneFlow/sceneflow_test_npz.txt
             }
             RETURN_RIGHT_DISP: false
+            CLEANPASS: false
 
     DATA_TRANSFORM:
         TRAINING:
@@ -37,7 +38,7 @@ MODEL:
     
     GEV_CHANNELS: 16
     GEV_HIDDEN_DIM: 32
-    GEV_ITERS: 2     # GRU step 수
+    GEV_ITERS: 4     # GRU step 수
 
     USE_GEV: true
     USE_GEO_COST_GATE: true

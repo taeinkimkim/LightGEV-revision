@@ -1,3 +1,8 @@
+/train_outputs
+/ckpts
+/outputs
+/logs
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
