@@ -1,5 +1,6 @@
 from typing import Any
 import os, csv, time
+import numpy as np
 import torch
 import torch.nn as nn
 from ptflops import get_model_complexity_info  # FLOPs 계산용 라이브러리
@@ -82,6 +83,7 @@ def evaluate_single_model(model, eval_loader, output_root: str, opts: Any,
     max_disp   = float(getattr(opts, "max_disp"))
     use_amp    = bool(getattr(opts, "amp"))
     pred_norm  = bool(getattr(opts, "pred_is_normalized"))
+    gt_oor     = str(getattr(opts, "gt_out_of_range", "clip"))
 
     io = ensure_dirs(output_root)
     csv_path = os.path.join(output_root, "results.csv")
@@ -198,7 +200,15 @@ def evaluate_single_model(model, eval_loader, output_root: str, opts: Any,
                 if disp_gt_t is not None:
                     disp_gt_np = _tensor_to_numpy_chw(disp_gt_t)
                     disp_gt_np = _resize_disparity_with_scale_x(disp_gt_np, (H, W))
-                    disp_gt_np = _sanitize_and_clip(disp_gt_np, 0.0, max_disp)
+                    if gt_oor == "invalid":
+                        # max_disp 를 넘는 GT 는 clip 하면 "예측도 max_disp 에서
+                        # 잘리므로 오차 0" 이 되어 성능이 좋아 보인다. 0 으로
+                        # 만들어 유효 마스크(disp > 0)에서 빠지게 한다.
+                        disp_gt_np = np.nan_to_num(disp_gt_np, nan=0.0, posinf=0.0, neginf=0.0)
+                        disp_gt_np = np.where(disp_gt_np > max_disp, 0.0, disp_gt_np)
+                        disp_gt_np = _sanitize_and_clip(disp_gt_np, 0.0, max_disp)
+                    else:
+                        disp_gt_np = _sanitize_and_clip(disp_gt_np, 0.0, max_disp)
 
                 all_gts.append(disp_gt_np)
 

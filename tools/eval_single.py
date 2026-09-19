@@ -31,6 +31,13 @@ def parse_args():
                    help="Maximum disparity value")
     p.add_argument("--tau_px", type=float, default=10.0,
                    help="Tau px")
+    p.add_argument("--gt_out_of_range", type=str, default="clip",
+                   choices=["clip", "invalid"],
+                   help="GT disparity 가 --max_disp 를 넘을 때의 처리. "
+                        "clip: max_disp 로 잘라서 그대로 평가에 포함 (기존 동작). "
+                        "invalid: 0 으로 만들어 평가에서 제외. "
+                        "Middlebury 를 원본 크기에 가깝게 평가할 때는 invalid 여야 "
+                        "수치가 해석 가능하다 (1배에서 GT 최대 1074px, 23.8%% 가 범위 밖).")
     p.add_argument("--eval_mode", type=str, default="auto",
                    choices=["auto", "light", "full"],
                    help="Evaluation mode: auto (default light), light (memory optimized), or full (with auxiliary outputs)")
@@ -91,6 +98,7 @@ def main():
         max_disp=float(args.max_disp), 
         tau_px=float(args.tau_px),
         eval_mode=args.eval_mode,
+        gt_out_of_range=args.gt_out_of_range,
         pred_is_normalized=args.pred_is_normalized,
         save_csv=not args.no_csv, 
         save_npz=not args.no_npz, 

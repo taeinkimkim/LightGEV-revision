@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=eval_lightgev_modify_4_refiner_only_iter6_r075_valid_GT_revised@taein
+#SBATCH --job-name=eval_lightgev_modify_4_refiner_only_iter6_r075_final_valid_GT_revised@taein
 #SBATCH --output=logs/eval/slurm_%x_%j.log
 #SBATCH --error=logs/eval/slurm_%x_%j.log
 #SBATCH -p Korean_students
@@ -40,7 +40,10 @@ nvidia-smi -L
 # sh V_experiments/evaluation/eval_pretrained_sceneflow_by_kitti_lightgev_modify_3.sh
 
 # LightGEVModify_4
-sh V_experiments/evaluation/eval_pretrained_sceneflow_by_sceneflow_lightgev_modify_4.sh
-sh V_experiments/evaluation/eval_pretrained_sceneflow_by_middlebury_lightgev_modify_4.sh
-sh V_experiments/evaluation/eval_pretrained_sceneflow_by_eth3d_lightgev_modify_4.sh
-sh V_experiments/evaluation/eval_pretrained_sceneflow_by_kitti_lightgev_modify_4.sh
+# sh V_experiments/evaluation/eval_pretrained_sceneflow_by_sceneflow_lightgev_modify_4.sh
+# sh V_experiments/evaluation/eval_pretrained_sceneflow_by_middlebury_lightgev_modify_4.sh
+# sh V_experiments/evaluation/eval_pretrained_sceneflow_by_eth3d_lightgev_modify_4.sh
+# sh V_experiments/evaluation/eval_pretrained_sceneflow_by_kitti_lightgev_modify_4.sh
+
+# LightGEVModify_4: Middlebury scale variation
+sh V_experiments/evaluation/eval_pretrained_sceneflow_by_middlebury_lightgev_modify_4_scale.sh

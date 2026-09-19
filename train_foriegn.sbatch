@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=lightgev_modify_3_full_iter2_window3_normT_biasF_bs12_lr0004_same_loss_ep90@taein
+#SBATCH --job-name=lightgev_modify_4_full_iter6_r075_dil136_normT_biasF_bs12_lr0004_ep90@taein
 #SBATCH --output=logs/train/slurm_%x_%j.log
 #SBATCH --error=logs/train/slurm_%x_%j.log
 #SBATCH -p Foreign_students
@@ -17,5 +17,5 @@ conda activate lightgev@taein
 
 nvidia-smi -L
 
-sh V_experiments/ablation_studies/pretrain_sceneflow_ablation_lightgev_modify_3.sh
+sh V_experiments/ablation_studies/pretrain_sceneflow_ablation_lightgev_modify_4.sh
 # sh V_experiments/training/pretrain_sceneflow.sh

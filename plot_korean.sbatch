@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=plot_lightgev_modify_4_region_epe_by_iter@taein
+#SBATCH --job-name=plot_lightgev_modify_4_full_iter6_val_metrics@taein
 #SBATCH --output=logs/plot/slurm_%x_%j.log
 #SBATCH --error=logs/plot/slurm_%x_%j.log
 #SBATCH -p Korean_students
@@ -17,6 +17,6 @@ conda activate lightgev@taein
 
 nvidia-smi -L
 
-# sh V_experiments/plotting/val_metrics.sh
+sh V_experiments/plotting/val_metrics.sh
 # sh V_experiments/plotting/alpha_metrics.sh
-sh V_experiments/plotting/region_epe_by_iter.sh
+# sh V_experiments/plotting/region_epe_by_iter.sh

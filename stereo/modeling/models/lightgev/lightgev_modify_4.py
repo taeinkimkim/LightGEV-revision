@@ -389,9 +389,63 @@ class LightGEVModify_4(nn.Module):
         gy = F.pad(gy, (0, 0, 0, 1))
         return gx, gy
 
+    # ------------------------------
+    # 구간별 runtime 측정 (CUDA event)
+    #
+    # 기본은 꺼져 있고, 꺼져 있으면 _stage_mark 가 flag 하나만 보고 바로 빠지므로
+    # 평소 학습/평가 경로의 오버헤드는 사실상 0 이다.
+    #
+    #   model.enable_stage_timing(True)
+    #   out = model(data)
+    #   model.stage_times_ms()   # {'backbone_gwc': 3.2, ...}
+    #
+    # 주의: elapsed_time 은 synchronize 를 강제하므로, 이걸 켠 채로 잰 "전체"
+    # 시간은 파이프라이닝이 깨져 실제보다 느릴 수 있다. 전체 latency 와 구간별
+    # 분해는 따로 측정할 것 (tools/profile_stage_runtime.py 가 그렇게 한다).
+    # ------------------------------
+    STAGE_NAMES = (
+        "backbone_gwc",             # Backbone + gwc 생성
+        "geo_encoding_gating",      # geometry encoding + gating
+        "aggregation_regression",   # LightStereo-style Aggregation + disparity regression
+        "gru_refinement",           # geometry-aware ConvGRU refinement
+        "context_upsampling",       # LightStereo context-aware upsampling
+    )
+
+    def enable_stage_timing(self, enabled: bool = True):
+        self._stage_timing = bool(enabled)
+        self._stage_events = []
+
+    def _stage_begin(self):
+        if not getattr(self, "_stage_timing", False):
+            return
+        self._stage_events = []
+        self._stage_mark("_start")
+
+    def _stage_mark(self, name: str):
+        if not getattr(self, "_stage_timing", False):
+            return
+        ev = torch.cuda.Event(enable_timing=True)
+        ev.record()
+        self._stage_events.append((name, ev))
+
+    def stage_times_ms(self):
+        """직전 forward 의 구간별 소요 시간(ms).
+
+        구간 이름은 '그 구간이 끝나는 지점의 mark' 이름이다. enable_stage_timing
+        을 켜지 않았으면 빈 dict.
+        """
+        evs = getattr(self, "_stage_events", [])
+        if len(evs) < 2:
+            return {}
+        torch.cuda.synchronize()
+        return {evs[i + 1][0]: evs[i][1].elapsed_time(evs[i + 1][1])
+                for i in range(len(evs) - 1)}
+
     def forward(self, data):
         left = data["left"]
         right = data["right"]
+
+        self._stage_begin()
 
         # ------------------------------
         # Stage 1: Backbone + Corr
@@ -402,6 +456,7 @@ class LightGEVModify_4(nn.Module):
         gwc = correlation_volume(
             feats_left[0], feats_right[0], self.max_disp // 4
         )  # [B, C_corr, H4, W4]
+        self._stage_mark("backbone_gwc")
 
         # ------------------------------
         # GEV + bounded multiplicative Geo Gate (Ablation)
@@ -445,6 +500,8 @@ class LightGEVModify_4(nn.Module):
             # [변경 3] bounded multiplicative gate: 부호 보존 + 증거 없으면 무동작
             gwc_enh = gwc * (1.0 + self.gate_range * torch.tanh(logit))
 
+        self._stage_mark("geo_encoding_gating")
+
         # LightStereo-style Aggregation
         enc = self.cost_agg(gwc_enh, feats_left)
         cost_agg = enc[0]
@@ -463,6 +520,8 @@ class LightGEVModify_4(nn.Module):
         result = {"disp_init_1_4": disp_low}
         feat_1_4 = feats_left[0]
 
+        self._stage_mark("aggregation_regression")
+
         # ------------------------------
         # Stage 2: Geometry-aware ConvGRU refinement (D0 -> D_T)
         # ------------------------------
@@ -480,6 +539,8 @@ class LightGEVModify_4(nn.Module):
 
         result["disp_ref_low"] = disp_ref_low
         result["disp_seq_1_4"] = disp_seq  # iterative 결과들
+
+        self._stage_mark("gru_refinement")
 
         # ------------------------------
         # Stage 3: LightStereo context-aware upsampling
@@ -503,6 +564,8 @@ class LightGEVModify_4(nn.Module):
             disp_pred = disp_up * 4.0
 
         result["disp_pred"] = disp_pred
+
+        self._stage_mark("context_upsampling")
 
         if self.training:
             disp_4 = F.interpolate(

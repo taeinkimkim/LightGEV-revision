@@ -13,7 +13,7 @@ EPOCH=89
 
 evaluate () {   # $1 = variant
     python tools/eval_single.py \
-      --model_name lightgev_modify_4_pretrained_sceneflow_$1_bs12_lr0004_normT_biasF_valid_GT_revised \
+      --model_name lightgev_modify_4_pretrained_sceneflow_$1_final_bs12_lr0004_normT_biasF_valid_GT_revised \
       --cfg cfgs/lightgev_modify_4/lightgev_modify_4_eval_middlebury_$1.yaml \
       --ckpt ${CKPT_ROOT}/lightgev_modify_4_train_sceneflow_$1/${EXTRA_TAG}/ckpt/checkpoint_epoch_${EPOCH}.pth \
       --output_root ${OUT_ROOT} \
@@ -28,4 +28,6 @@ evaluate full_iter_6_r_075
 # evaluate full_iter_10_r_075
 # evaluate full_iter_6_r_075_dil_2
 # evaluate full_iter_6_r_075_dil_1
+# evaluate full_iter_6_r_075_dil_136
+#evaluate full_iter_6_r_075_dil_148
 # evaluate refiner_only_iter_6_r_075

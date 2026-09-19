@@ -31,11 +31,13 @@ run () {   # $1 = variant
 # run full_iter_2
 # run full_iter_2_r_075
 # run full_iter_4_r_075
-run full_iter_6_r_075
+# run full_iter_6_r_075
 # run full_iter_8_r_075
 # run full_iter_10_r_075
 # run full_iter_6_r_075_dil_2
 # run full_iter_6_r_075_dil_1
+# run full_iter_6_r_075_dil_136
+run full_iter_6_r_075_dil_148
 # run refiner_only_iter_6_r_075
 
 

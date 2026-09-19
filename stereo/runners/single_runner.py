@@ -29,6 +29,7 @@ class SingleEvalOptions:
     save_region_overlay: bool = True
     region_overlay_alpha: float = 0.4
     eval_mode: str = "auto"  # "auto", "light", "full"
+    gt_out_of_range: str = "clip"  # "clip" (기존) 또는 "invalid"
 
 class SingleRunner:
     def __init__(self, trainer, device, output_root, opts: SingleEvalOptions = SingleEvalOptions()):

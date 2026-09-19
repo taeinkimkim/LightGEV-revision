@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=lightgev_modify_4_full_iter6_r075_normT_biasF_bs12_lr0004_ep90@taein
+#SBATCH --job-name=lightgev_modify_4_full_iter6_r075_dil148_normT_biasF_bs12_lr0004_ep90@taein
 #SBATCH --output=logs/train/slurm_%x_%j.log
 #SBATCH --error=logs/train/slurm_%x_%j.log
 #SBATCH -p Korean_students
