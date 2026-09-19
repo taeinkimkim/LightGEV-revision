@@ -221,3 +221,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ONNX / TensorRT export 산출물 (tools/export_onnx.py 기본 --out-dir)
+onnx_export/
+*.onnx
+*.engine
