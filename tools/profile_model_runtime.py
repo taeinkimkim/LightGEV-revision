@@ -123,8 +123,7 @@ def run_loop(model, data, precision, warmup, runs):
                    torch.cuda.max_memory_reserved() / (1024 ** 3))
 
 
-def profile_one(label, cfg_path, group, h, w, precision, args, device):
-    cfg = EasyDict(yaml.safe_load(open(cfg_path)))
+def profile_one(label, cfg, group, h, w, precision, args, device):
     model = build_model(cfg).to(device).eval()      # eval() 필수 (IGEV++ 의 VALID_ITERS)
     if precision == "fp16":
         model = model.half()
@@ -147,28 +146,48 @@ def profile_one(label, cfg_path, group, h, w, precision, args, device):
     }
 
 
-def print_table(results, h, w, precision):
-    print("\n" + "=" * 108)
-    print(" input {}x{}  |  {}".format(h, w, precision))
-    print("=" * 108)
-    head = "{:<6}{:<17}{:<18}{:>11}{:>9}{:>9}{:>9}{:>10}{:>10}".format(
-        "group", "label", "model", "params(M)", "size MB", "mean ms", "p95 ms", "FPS", "peak GB")
-    print(head)
-    print("-" * len(head))
-    for r in results:
-        if "error" in r:
-            print("{:<6}{:<17}{:<18}{:>58}".format(r["group"], r["label"], r.get("model_name", "?"),
-                                                   "FAILED: " + r["error"][:50]))
-            continue
-        lat = r["latency"]
-        print("{:<6}{:<17}{:<18}{:>11.2f}{:>9.1f}{:>9.3f}{:>9.3f}{:>10.1f}{:>10.3f}".format(
-            r["group"], r["label"], r["model_name"],
-            r["stats"]["params_learnable"] / 1e6, r["stats"]["size_mb"],
-            lat["mean"], lat["p95"], 1000.0 / lat["mean"], r["peak_alloc_gb"]))
-    print("-" * len(head))
+# 표를 한 번에 그리지 않고 header -> 모델마다 row -> footer 로 나눠 찍는다.
+# 오래 걸리는 모델(IGEV++ 는 혼자 40초 넘는다) 중에도 진행 상황이 보여야 한다.
+#
+# 모든 출력에 flush=True 를 준다. stdout 이 터미널이 아니면(스크립트에서 | tee 로
+# 넘길 때) 파이썬이 블록 버퍼링을 해서, flush 없이는 프로세스가 끝날 때까지
+# 아무것도 안 보인다.
+HEAD_FMT = "{:<6}{:<17}{:<18}{:>11}{:>9}{:>9}{:>9}{:>10}{:>10}"
+ROW_HEAD_FMT = "{:<6}{:<17}{:<18}"
+ROW_TAIL_FMT = "{:>11.2f}{:>9.1f}{:>9.3f}{:>9.3f}{:>10.1f}{:>10.3f}"
+
+
+def print_header(h, w, precision, n_models):
+    print("\n" + "=" * 108, flush=True)
+    print(" input {}x{}  |  {}  |  모델 {}개".format(h, w, precision, n_models), flush=True)
+    print("=" * 108, flush=True)
+    head = HEAD_FMT.format("group", "label", "model", "params(M)", "size MB",
+                           "mean ms", "p95 ms", "FPS", "peak GB")
+    print(head, flush=True)
+    print("-" * len(head), flush=True)
+    return len(head)
+
+
+def print_row_start(group, label, model_name):
+    """측정 전에 행의 앞부분을 먼저 찍는다. 줄바꿈 없이 두어 결과가 이어 붙게 한다."""
+    print(ROW_HEAD_FMT.format(group, label, model_name), end="", flush=True)
+
+
+def print_row_end(r):
+    if "error" in r:
+        print("{:>58}".format("FAILED: " + r["error"][:50]), flush=True)
+        return
+    lat = r["latency"]
+    print(ROW_TAIL_FMT.format(
+        r["stats"]["params_learnable"] / 1e6, r["stats"]["size_mb"],
+        lat["mean"], lat["p95"], 1000.0 / lat["mean"], r["peak_alloc_gb"]), flush=True)
+
+
+def print_footer(results, width):
+    print("-" * width, flush=True)
     for r in results:
         if "error" not in r:
-            print("  {:<17}{}".format(r["label"], r["notes"]))
+            print("  {:<17}{}".format(r["label"], r["notes"]), flush=True)
 
 
 def main():
@@ -209,31 +228,51 @@ def main():
     if not entries:
         raise SystemExit("측정할 모델이 없다. --models 값을 확인할 것.")
 
-    print("device     : {}  ({})".format(args.device, torch.cuda.get_device_name(device)))
-    print("torch      : {}  (cuda {})".format(torch.__version__, torch.version.cuda))
+    print("device     : {}  ({})".format(args.device, torch.cuda.get_device_name(device)), flush=True)
+    print("torch      : {}  (cuda {})".format(torch.__version__, torch.version.cuda), flush=True)
     print("warm-up    : {}   runs: {}   cudnn.benchmark: {}".format(
-        args.warmup, args.runs, args.cudnn_benchmark))
-    print("checkpoint : 쓰지 않음 (runtime 은 가중치 값과 무관)")
+        args.warmup, args.runs, args.cudnn_benchmark), flush=True)
+    print("checkpoint : 쓰지 않음 (runtime 은 가중치 값과 무관)", flush=True)
 
     all_results = []
     for res in args.resolution:
         h, w = parse_resolution(res)
         for precision in args.precision:
             results = []
+            width = print_header(h, w, precision, len(entries))
             for label, cfg_path, group in entries:
                 if not os.path.isfile(cfg_path):
-                    results.append({"label": label, "group": group,
-                                    "error": "cfg 없음: " + cfg_path})
+                    print_row_start(group, label, "?")
+                    r = {"label": label, "group": group, "error": "cfg 없음: " + cfg_path}
+                    print_row_end(r)
+                    results.append(r)
                     continue
+
+                # 모델 이름을 먼저 찍어 두면 오래 걸리는 모델을 도는 중에도
+                # 지금 무엇을 재고 있는지 보인다 (행이 반쯤 찍힌 채로 대기).
                 try:
-                    results.append(profile_one(label, cfg_path, group, h, w,
-                                               precision, args, device))
+                    cfg = EasyDict(yaml.safe_load(open(cfg_path)))
+                    model_name = cfg.MODEL.NAME
+                except Exception as e:
+                    print_row_start(group, label, "?")
+                    r = {"label": label, "group": group,
+                         "error": "cfg 파싱 실패: {}".format(e)}
+                    print_row_end(r)
+                    results.append(r)
+                    continue
+
+                print_row_start(group, label, model_name)
+                try:
+                    r = profile_one(label, cfg, group, h, w, precision, args, device)
                 except Exception as e:  # OOM 이나 미지원 조합에서 전체가 죽지 않게
                     torch.cuda.empty_cache()
-                    results.append({"label": label, "group": group,
-                                    "error": "{}: {}".format(type(e).__name__, e)})
+                    r = {"label": label, "group": group, "model_name": model_name,
+                         "error": "{}: {}".format(type(e).__name__, e)}
+                print_row_end(r)
+                if "error" in r:
                     traceback.print_exc(limit=1)
-            print_table(results, h, w, precision)
+                results.append(r)
+            print_footer(results, width)
             all_results.extend(results)
 
     if args.csv:
@@ -258,7 +297,7 @@ def main():
                              round(lat["std"], 4), round(lat["p95"], 4),
                              round(1000.0 / lat["mean"], 2), round(r["peak_alloc_gb"], 4),
                              round(r["peak_reserved_gb"], 4), r["notes"]])
-        print("\nsaved: {}".format(path))
+        print("\nsaved: {}".format(path), flush=True)
 
 
 if __name__ == "__main__":
