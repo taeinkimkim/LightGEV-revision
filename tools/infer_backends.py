@@ -191,7 +191,10 @@ class TRTRunner:
             return tuple(self.ctx.get_tensor_shape(name))
         return tuple(self.ctx.get_binding_shape(self.engine.get_binding_index(name)))
 
-    def __call__(self, left, right):
+    def bind(self, left, right):
+        """입력을 GPU 로 올리고 출력 버퍼를 잡는다. 벤치마크는 이걸 한 번만 하고
+        execute() 만 반복해서 H2D/D2H 복사를 측정에서 뺀다 (데스크탑에서 CUDA event
+        로 잰 것과 같은 조건)."""
         feed = {"left": left, "right": right}
         if not set(self.inputs) <= set(feed):     # 이름이 다르면 순서로 받는다
             feed = dict(zip(self.inputs, [left, right]))
@@ -219,6 +222,8 @@ class TRTRunner:
             if self.tensor_api:
                 self.ctx.set_tensor_address(name, self.mem.ptr(self._dev[name]))
 
+    def execute(self):
+        """이미 bind 된 버퍼로 추론만 한다 (복사 없음)."""
         if self.tensor_api:
             ok = self.ctx.execute_async_v3(0)
         else:
@@ -227,10 +232,25 @@ class TRTRunner:
             raise RuntimeError("TensorRT 실행 실패")
         self.mem.sync()
 
+    def fetch(self):
         name = self.outputs[0]
         self.mem.dtoh(self._host_out[name], self._dev[name])
         out = self._host_out[name].astype(np.float32)
         return out if out.ndim == 4 else out[None]
+
+    def __call__(self, left, right):
+        self.bind(left, right)
+        self.execute()
+        return self.fetch()
+
+    def mem_info_gb(self):
+        """(free, total) GB. peak 메모리를 free 의 최저점으로 재기 위한 것."""
+        if self.mem.kind != "cuda-python":
+            return None
+        err, free, total = self.mem.cudart.cudaMemGetInfo()
+        if int(err) != 0:
+            return None
+        return free / 1024 ** 3, total / 1024 ** 3
 
 
 def make_runner(backend, engine=None, onnx=None, model=None,
