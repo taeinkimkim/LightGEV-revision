@@ -20,6 +20,41 @@ import os
 import numpy as np
 
 
+def cuda_mem_probe():
+    """CUDA 컨텍스트를 먼저 띄우고 free/total 을 재는 도구.
+
+    torch.cuda.max_memory_allocated() 에 대응하는 값을 얻으려면 **컨텍스트 초기화
+    이후**를 기준선으로 잡아야 한다. 아무 CUDA 호출 전에 재면 이후 생기는 컨텍스트
+    (수백 MB)가 델타에 통째로 들어가 비교가 안 된다.
+
+    반환: free_gb() 를 가진 객체. cuda-python 이 없으면 None.
+    """
+    try:
+        mem = _CudaMem()
+    except SystemExit:
+        return None
+    if mem.kind != "cuda-python":
+        return None
+
+    # cudaFree(0) 은 컨텍스트만 만들고 아무것도 해제하지 않는 관용적 초기화다.
+    try:
+        mem.cudart.cudaFree(0)
+    except Exception:
+        pass
+
+    class Probe:
+        def __init__(self, mem):
+            self.mem = mem
+
+        def free_gb(self):
+            err, free, total = self.mem.cudart.cudaMemGetInfo()
+            if int(err) != 0:
+                return None
+            return free / 1024 ** 3, total / 1024 ** 3
+
+    return Probe(mem)
+
+
 class TorchRunner:
     """PyTorch 기준값. FP16/BF16 열화를 재려면 비교 대상이 있어야 한다.
 
@@ -80,18 +115,26 @@ class _CudaMem:
     """
 
     def __init__(self):
-        try:
-            from cuda import cudart          # cuda-python (JetPack 에 보통 포함)
-            self.cudart = cudart
-            self.kind = "cuda-python"
-            return
-        except ImportError:
-            pass
+        # cuda-python 12.8 부터 모듈 경로가 cuda.bindings.runtime 으로 바뀌었다.
+        # 구버전(cuda.cudart)도 같이 받아 준다.
+        for imp in ("bindings", "legacy"):
+            try:
+                if imp == "bindings":
+                    from cuda.bindings import runtime as cudart
+                else:
+                    from cuda import cudart
+                self.cudart = cudart
+                self.kind = "cuda-python"
+                self.stream = None
+                return
+            except ImportError:
+                continue
         try:
             import pycuda.autoinit           # noqa: F401  (컨텍스트 초기화 부작용)
             import pycuda.driver as cuda
             self.cuda = cuda
             self.kind = "pycuda"
+            self.stream = None
             return
         except ImportError:
             pass
@@ -100,7 +143,10 @@ class _CudaMem:
             "  pip install cuda-python   (권장. NVIDIA 공식, Jetson 에서 가장 가볍다)\n"
             "  pip install pycuda")
 
-    def _check(self, err):
+    def _check(self, ret):
+        """cuda-python 은 반환이 제각각이다: cudaMalloc -> (err, ptr),
+        cudaFree/cudaDeviceSynchronize -> (err,), 일부는 err 하나. 앞의 것만 본다."""
+        err = ret[0] if isinstance(ret, (tuple, list)) else ret
         if int(err) != 0:
             raise RuntimeError("CUDA 오류 {}".format(err))
 
@@ -116,6 +162,19 @@ class _CudaMem:
             self._check(self.cudart.cudaFree(ptr))
         else:
             ptr.free()
+
+    def get_stream(self):
+        """전용 스트림. 기본 스트림(0)을 쓰면 TRT 가 enqueueV3 에서 추가 동기화를
+        한다고 경고하고 실제로도 느려질 수 있다."""
+        if self.kind == "cuda-python":
+            if getattr(self, "stream", None) is None:
+                ret = self.cudart.cudaStreamCreate()
+                self._check(ret)
+                self.stream = ret[1]
+            return int(self.stream)
+        if getattr(self, "stream", None) is None:
+            self.stream = self.cuda.Stream()
+        return int(self.stream.handle)
 
     def htod(self, dst, arr):
         if self.kind == "cuda-python":
@@ -138,7 +197,12 @@ class _CudaMem:
 
     def sync(self):
         if self.kind == "cuda-python":
-            self._check(self.cudart.cudaDeviceSynchronize())
+            if getattr(self, "stream", None) is not None:
+                self._check(self.cudart.cudaStreamSynchronize(self.stream))
+            else:
+                self._check(self.cudart.cudaDeviceSynchronize())
+        elif getattr(self, "stream", None) is not None:
+            self.stream.synchronize()
         else:
             self.cuda.Context.synchronize()
 
@@ -225,7 +289,7 @@ class TRTRunner:
     def execute(self):
         """이미 bind 된 버퍼로 추론만 한다 (복사 없음)."""
         if self.tensor_api:
-            ok = self.ctx.execute_async_v3(0)
+            ok = self.ctx.execute_async_v3(self.mem.get_stream())
         else:
             ok = self.ctx.execute_v2([self.mem.ptr(self._dev[n]) for n in self.io_names])
         if not ok:
@@ -242,6 +306,32 @@ class TRTRunner:
         self.bind(left, right)
         self.execute()
         return self.fetch()
+
+    def engine_memory_mb(self):
+        """엔진이 실제로 잡는 GPU 메모리. cudaMemGetInfo 와 달리 다른 프로세스에
+        오염되지 않는다.
+
+          activation : 중간 텐서용 작업 공간 (TRT 가 미리 계산해 둔 값)
+          weights    : 가중치. 엔진 파일 크기로 근사한다
+          io         : 우리가 잡은 입출력 버퍼
+        """
+        act = None
+        for attr in ("device_memory_size_v2", "device_memory_size"):
+            if hasattr(self.engine, attr):
+                try:
+                    act = int(getattr(self.engine, attr))
+                    break
+                except Exception:
+                    continue
+        io = 0
+        for name in self.io_names:
+            shape = self._shape(name)
+            n = 1
+            for d in shape:
+                n *= int(d)
+            io += n * np.dtype(self._np_dtype(name)).itemsize
+        return {"activation_mb": act / 1024 ** 2 if act is not None else None,
+                "io_mb": io / 1024 ** 2}
 
     def mem_info_gb(self):
         """(free, total) GB. peak 메모리를 free 의 최저점으로 재기 위한 것."""

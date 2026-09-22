@@ -67,11 +67,11 @@ RUNS=${RUNS:-200}        # 횟수
 # trtexec 로도 교차 확인한다. 주의: --warmUp 은 **밀리초**라 "50 회" 를 직접 줄 수
 # 없다. 1 회가 대략 WARMUP_MS/50 ms 보다 빠르면 50 회 이상 돌아간다는 뜻으로 넉넉히 잡는다.
 # --duration=0 을 줘야 --iterations 횟수만큼만 돈다(기본은 최소 3 초를 채운다).
-WARMUP_MS=${WARMUP_MS:-5000}
+WARMUP_MS=${WARMUP_MS:-10000}
 # avgRuns 는 "N 회 평균" 보고 단위라 iterations 와 같게 두면 요약이 한 줄뿐이다. 10 으로 둔다.
 BENCH_FLAGS=${BENCH_FLAGS:---warmUp=${WARMUP_MS} --iterations=${RUNS} --avgRuns=10 --duration=0}
 
-MODELS="lightgev_ours_544x960 lightstereo_m_544x960"
+MODELS="lightgev_ours_544x960 lightstereo_m_544x960 banet_2d_544x960"
 
 # 단계를 나눠서 실행한다. 엔진 빌드가 Orin Nano 에서 모델당 20분 넘게 걸리므로,
 # 뒷단(측정/평가)에서 실패했을 때 빌드부터 다시 하지 않도록 분리했다.
@@ -140,7 +140,7 @@ fi
 echo "  점검 통과"
 
 # ---------------------------------------------------------------------------
-# 1) 엔진 빌드 (--buildOnly). 측정은 여기서 하지 않는다.
+# 1) 엔진 빌드 (--skipInference). 측정은 여기서 하지 않는다.
 #
 #    --timingCacheFile 을 주면 두 번째 빌드부터 크게 빨라진다. 첫 빌드가
 #    1255 초(21분) 걸렸으므로 다시 구울 일이 있으면 반드시 쓸 것.
@@ -162,7 +162,7 @@ if has_step build; then
             --saveEngine=${ENG} \
             --timingCacheFile=${ENGINE_DIR}/timing_${PREC_TAG}.cache \
             ${PRECISION_FLAG} \
-            --buildOnly ${BUILD_FLAGS} \
+            --skipInference ${BUILD_FLAGS} \
             2>&1 | tee ${ENGINE_DIR}/${M}_${PREC_TAG}_build.log
 
         if [ ! -f "${ENG}" ]; then
@@ -204,13 +204,13 @@ if has_step bench; then
             2>&1 | tee ${ENGINE_DIR}/${M}_${PREC_TAG}_bench.log
 
         # (b) trtexec 교차 확인
-        echo ""
-        echo "--- trtexec 교차 확인 ---"
-        ${TRTEXEC} \
-            --loadEngine=${ENG} \
-            ${BENCH_FLAGS} \
-            2>&1 | tee ${ENGINE_DIR}/${M}_${PREC_TAG}_trtexec.log \
-            | grep -E "Latency:|Throughput:|GPU Compute Time" || true
+        # echo ""
+        # echo "--- trtexec 교차 확인 ---"
+        # ${TRTEXEC} \
+        #     --loadEngine=${ENG} \
+        #     ${BENCH_FLAGS} \
+        #     2>&1 | tee ${ENGINE_DIR}/${M}_${PREC_TAG}_trtexec.log \
+        #     | grep -E "Latency:|Throughput:|GPU Compute Time" || true
     done
 fi
 

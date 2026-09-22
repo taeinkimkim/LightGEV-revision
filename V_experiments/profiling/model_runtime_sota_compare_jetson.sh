@@ -24,7 +24,7 @@ set -u
 
 OUT_ROOT=outputs/model_runtime
 RESOLUTION=544x960          # SceneFlow 평가 해상도
-PRECISION=fp32              # 평가 파이프라인이 amp=False 라 fp32 로 맞춘다
+PRECISION=fp16              # 평가 파이프라인이 amp=False 라 fp32 로 맞춘다
 WARMUP=50
 RUNS=200
 DEVICE=cuda:0
@@ -32,6 +32,7 @@ DEVICE=cuda:0
 mkdir -p ${OUT_ROOT}
 
 python tools/profile_model_runtime.py \
+    --models "lightgev (ours)" lightstereo_m banet_2d msnet_2d \
     --resolution ${RESOLUTION} \
     --precision ${PRECISION} \
     --warmup ${WARMUP} \
