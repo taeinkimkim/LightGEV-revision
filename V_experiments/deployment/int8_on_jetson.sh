@@ -57,8 +57,7 @@ STEPS=${STEPS:-build,bench,eval}
 FORCE_BUILD=${FORCE_BUILD:-0}
 has_step () { case ",${STEPS}," in *",$1,"*) return 0;; *) return 1;; esac; }
 
-# MODELS="lightgev_ours_544x960 lightstereo_m_544x960 banet_2d_544x960"
-MODELS="lightstereo_m_544x960"
+MODELS="lightgev_ours_544x960 lightstereo_m_544x960 banet_2d_544x960 msnet_2d_544x960"
 
 # ---------------------------------------------------------------------------
 # 0) 사전 점검

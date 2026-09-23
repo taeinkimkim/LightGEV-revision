@@ -30,6 +30,14 @@
 #                       외장 SSD 를 붙이고 DATA_ROOT 를 거기로 잡을 것.
 #                       파이프라인만 먼저 확인하려면 LIMIT 를 잠깐 걸면 된다.
 #
+# --- 정밀도 ---
+# PRECISION=fp32 | fp16 (기본) | bf16 로 고른다. 엔진 파일 이름에 그대로 들어가므로
+# 세 정밀도를 나란히 두고 비교할 수 있다:
+#   lightgev_ours_544x960_fp32.engine / _fp16.engine / _bf16.engine
+#
+# FP32 는 trtexec 에 아무 인자도 주지 않는 것이다 (--fp32 라는 인자는 없다).
+# 빌드는 FP16 보다 빠르고(탐색할 커널이 적다), 엔진은 크고, 실행은 느리다.
+#
 # --- FP16 vs BF16 ---
 # BF16 은 지수부가 넓은 대신 가수부가 8 비트로, FP16(11 비트)보다 **정밀도가 낮다**.
 # 이 모델들은 192 단계 cost volume 에 softmax 를 걸어 soft-argmin 을 하므로 범위가
@@ -50,8 +58,23 @@ DATA_ROOT=${DATA_ROOT:-${SSD}/SceneFlow}
 ENGINE_DIR=${ENGINE_DIR:-${SSD}/outputs/engines}
 LIMIT=${LIMIT:-0}                        # 0 = 전체 4370 장 (기존 표와 같은 조건)
 TRTEXEC=${TRTEXEC:-/usr/src/tensorrt/bin/trtexec}
-PRECISION_FLAG=${PRECISION_FLAG:---fp16} # BF16 을 보려면 --bf16 (TRT 10.x 이상)
-PREC_TAG=$(echo "${PRECISION_FLAG}" | tr -d '-')   # 파일 이름용: --fp16 -> fp16
+# 정밀도는 **이름**으로 지정한다: fp32 | fp16 | bf16
+#   PRECISION=fp32 bash V_experiments/deployment/run_on_jetson.sh
+#
+# trtexec 에는 --fp32 라는 인자가 없다. FP32 가 기본이라 **아무것도 주지 않는 것**이
+# FP32 다. 그래서 flag 는 빈 문자열이 된다.
+#
+# 예전처럼 PRECISION_FLAG 를 직접 주는 방식은 쓰지 말 것. ${VAR:-기본값} 은 빈
+# 문자열도 기본값으로 대체해서, PRECISION_FLAG="" 로 FP32 를 노려도 --fp16 이 된다.
+PRECISION=${PRECISION:-fp16}
+
+case "${PRECISION}" in
+    fp32) PRECISION_FLAG="" ;;
+    fp16) PRECISION_FLAG="--fp16" ;;
+    bf16) PRECISION_FLAG="--bf16" ;;   # TensorRT 10.x 이상에서만 있다
+    *)    echo "모르는 PRECISION: ${PRECISION}  (fp32 | fp16 | bf16)"; exit 1 ;;
+esac
+PREC_TAG=${PRECISION}                  # 파일 이름용
 
 # trtexec 플래그. 빌드와 측정이 분리됐으므로 각각에 맞는 것만 준다.
 #   --monitorMemory 는 빌드 중 메모리 추적용이라 build 쪽에.
@@ -71,7 +94,7 @@ WARMUP_MS=${WARMUP_MS:-10000}
 # avgRuns 는 "N 회 평균" 보고 단위라 iterations 와 같게 두면 요약이 한 줄뿐이다. 10 으로 둔다.
 BENCH_FLAGS=${BENCH_FLAGS:---warmUp=${WARMUP_MS} --iterations=${RUNS} --avgRuns=10 --duration=0}
 
-MODELS="lightgev_ours_544x960 lightstereo_m_544x960 banet_2d_544x960"
+MODELS="lightgev_ours_544x960 lightstereo_m_544x960 banet_2d_544x960 msnet_2d_544x960"
 
 # 단계를 나눠서 실행한다. 엔진 빌드가 Orin Nano 에서 모델당 20분 넘게 걸리므로,
 # 뒷단(측정/평가)에서 실패했을 때 빌드부터 다시 하지 않도록 분리했다.
@@ -100,6 +123,7 @@ echo "  ONNX_DIR   = ${ONNX_DIR}"
 echo "  ENGINE_DIR = ${ENGINE_DIR}"
 echo "  DATA_ROOT  = ${DATA_ROOT}"
 echo "  TRTEXEC    = ${TRTEXEC}"
+echo "  PRECISION  = ${PRECISION}  (trtexec 인자: ${PRECISION_FLAG:-<없음 = FP32>})"
 echo ""
 
 [ -x "${TRTEXEC}" ] || note "trtexec 가 없거나 실행 불가: ${TRTEXEC}  (TRTEXEC=... 로 지정)"
@@ -155,7 +179,7 @@ if has_step build; then
         fi
         echo ""
         echo "=============================================================="
-        echo " ${M} : 엔진 빌드 (${PRECISION_FLAG})  - 모델당 20분 이상 걸린다"
+        echo " ${M} : 엔진 빌드 (${PRECISION}) - 모델당 20분 이상 걸린다"
         echo "=============================================================="
         ${TRTEXEC} \
             --onnx=${ONNX_DIR}/${M}.onnx \
