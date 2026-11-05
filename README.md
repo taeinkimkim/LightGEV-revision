@@ -10,7 +10,7 @@ LightGEV is a 2D stereo matching network that adds explicit disparity-axis geome
 
 - Designed a geometry-aware planar stereo architecture that integrates explicit disparity-axis geometry encoding into both cost modulation and recurrent refinement, without 3D cost aggregation.
 - Introduced the Planar Geometry Encoding Volume (PGEV) and its multi-range extension (MPGEV), which encode relationships among disparity hypotheses through dilated disparity-wise filtering (dilations {1, 2, 4}).
-- Developed a bounded, geometry-guided multiplicative gating mechanism ($S = 1 + r\tanh(\ell)$) that rescales correlation responses before aggregation, initialized as an identity so the original cost volume is preserved at the start of training.
+- Developed a bounded, geometry-guided multiplicative gating mechanism ($`S = 1 + r\tanh(\ell)`$) that rescales correlation responses before aggregation, initialized as an identity so the original cost volume is preserved at the start of training.
 - Reduced zero-shot global EPE relative to LightStereo-M by approximately **24.7% on ETH3D** and **13.9% on KITTI**, and achieved lower global EPE than BANet-2D on ETH3D, KITTI, and Middlebury.
 - Achieved **9.889 ms (101.1 FPS)** with **52.941 GFLOPs** and **0.352 GB** peak memory on a desktop GPU, which is 5.7–16.7× faster than the evaluated volumetric models.
 - Deployed the model with TensorRT on an NVIDIA Jetson Orin Nano Super Developer Kit, reaching **14.4 FPS under INT8** with a 27.3 MB engine.
@@ -24,10 +24,10 @@ LightGEV adds disparity context to the lightweight pipeline and uses it in both 
 ![LightGEV architecture](assets/fig1_architecture.png)
 <p align="center"><em>Fig. 1. Model architecture of LightGEV.</em></p>
 
-1. **Correlation-based cost construction.** A MobileNetV2 backbone extracts left/right features $F_L, F_R$ at 1/4 resolution. Following LightStereo, a channel-averaged inner product gives a correlation volume $C \in \mathbb{R}^{H \times W \times D}$, which is reshaped to $C_{flat} \in \mathbb{R}^{D \times (HW) \times 1}$ so that disparity becomes a filterable axis.
-2. **Multi-range planar geometry encoding (MPGEV).** Three parallel $3 \times 1$ convolution branches with dilations $\delta_k \in \lbrace 1, 2, 4 \rbrace$ (spans of 3, 5, and 9 disparity bins, $M = 5$ channels each) filter along the disparity axis. Their outputs are concatenated and fused by a $1 \times 1$ convolution into a geometry volume $G \in \mathbb{R}^{D \times (HW) \times K}$ ($K = 16$), which keeps a separate descriptor for each disparity hypothesis.
-3. **Geometry-modulated cost aggregation.** Each geometry vector is L2-normalized and projected by a $1 \times 1$ convolution $\psi$ to a gate logit $\ell$. The bounded gate $S = 1 + r\tanh(\ell)$ ($r = 0.75$) multiplies the correlation volume, $\tilde{C} = C \odot S$. The gate preserves the sign of each response and limits rescaling to $[1 - r, 1 + r]$. The modulated volume goes through the LightStereo cost aggregation and disparity regression stages to produce the initial disparity.
-4. **Geometry-conditioned disparity refinement.** A ConvGRU update operator refines the disparity for 6 iterations, $\mathbf{d}^{i+1} = \mathbf{d}^{i} + f(\mathbf{d}^{i}, F_L, \tilde{C})$, using the geometry-modulated cost volume as input. A LightStereo refinement step and context-aware upsampling then restore full resolution.
+1. **Correlation-based cost construction.** A MobileNetV2 backbone extracts left/right features $`F_L, F_R`$ at 1/4 resolution. Following LightStereo, a channel-averaged inner product gives a correlation volume $`C \in \mathbb{R}^{H \times W \times D}`$, which is reshaped to $`C_{flat} \in \mathbb{R}^{D \times (HW) \times 1}`$ so that disparity becomes a filterable axis.
+2. **Multi-range planar geometry encoding (MPGEV).** Three parallel 3×1 convolution branches with dilations $`\delta_k \in \lbrace 1, 2, 4 \rbrace`$ (spans of 3, 5, and 9 disparity bins, $`M = 5`$ channels each) filter along the disparity axis. Their outputs are concatenated and fused by a 1×1 convolution into a geometry volume $`G \in \mathbb{R}^{D \times (HW) \times K}`$ ($`K = 16`$), which keeps a separate descriptor for each disparity hypothesis.
+3. **Geometry-modulated cost aggregation.** Each geometry vector is L2-normalized and projected by a 1×1 convolution $`\psi`$ to a gate logit $`\ell`$. The bounded gate $`S = 1 + r\tanh(\ell)`$ ($`r = 0.75`$) multiplies the correlation volume, $`\tilde{C} = C \odot S`$. The gate preserves the sign of each response and limits rescaling to $`[1 - r, 1 + r]`$. The modulated volume goes through the LightStereo cost aggregation and disparity regression stages to produce the initial disparity.
+4. **Geometry-conditioned disparity refinement.** A ConvGRU update operator refines the disparity for 6 iterations, $`\mathbf{d}^{i+1} = \mathbf{d}^{i} + f(\mathbf{d}^{i}, F_L, \tilde{C})`$, using the geometry-modulated cost volume as input. A LightStereo refinement step and context-aware upsampling then restore full resolution.
 
 All models are trained only on SceneFlow (FlyingThings3D, final pass) and evaluated zero-shot, with no fine-tuning, on Middlebury 2014, ETH3D, KITTI 2012, and KITTI 2015. LightStereo-M is retrained under exactly the same protocol; BANet-2D uses the authors' released SceneFlow checkpoint.
 
@@ -54,7 +54,7 @@ All numbers are global end-point error (EPE) in pixels; lower is better. Global 
 
 | Component | Setting | Global EPE |
 |---|---|---|
-| Modulation range $r$ (aggregation only) | 0 / 0.25 / 0.5 / **0.75** | 1.123 / 1.125 / 1.103 / **1.097** |
+| Modulation range $`r`$ (aggregation only) | 0 / 0.25 / 0.5 / **0.75** | 1.123 / 1.125 / 1.103 / **1.097** |
 | Geometry placement | None / Aggregation / Refinement / **Both** | 1.123 / 1.097 / 1.108 / **1.016** |
 | Refinement iterations | 0 / 2 / 4 / **6** / 8 / 10 | 1.097 / 1.052 / 1.060 / **1.016** / 1.040 / 1.029 |
 | MPGEV dilations | (1) / (1,2) / **(1,2,4)** / (1,3,6) / (1,4,8) | 1.103 / 1.087 / **1.016** / 1.046 / 1.046 |
